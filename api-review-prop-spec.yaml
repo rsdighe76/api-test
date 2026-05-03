@@ -1,0 +1,1141 @@
+openapi: 3.1.0
+info:
+  title: Acme Commerce API - API Review Probe Spec
+  version: 1.0.0
+  description: |
+    This is a synthetic OpenAPI specification designed to reverse engineer API review best-practice patterns.
+    It intentionally includes paired GOOD and BAD examples. Each operation contains a TEST_CASE id in the description.
+    Do not treat this as a production API. Use review findings to map reviewer feedback back to the test case ids.
+servers:
+  - url: https://api.acme-example.com/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Customers
+  - name: Payments
+  - name: Refunds
+  - name: Orders
+  - name: Webhooks
+  - name: Reports
+  - name: Bad Patterns
+paths:
+  /customers:
+    post:
+      tags: [Customers]
+      operationId: createCustomer
+      summary: Create a customer
+      description: |
+        TEST_CASE: NAMING_01_GOOD_RESOURCE_CREATE
+        Purpose: Tests whether resource-oriented endpoint design is favored.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomerRequest'
+            examples:
+              default:
+                value:
+                  email: alex@example.com
+                  name: Alex Chen
+                  metadata:
+                    plan: gold
+      responses:
+        '201':
+          description: Customer created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+    get:
+      tags: [Customers]
+      operationId: listCustomers
+      summary: List customers
+      description: |
+        TEST_CASE: PAGINATION_01_GOOD_CURSOR
+        Purpose: Tests cursor-based pagination with stable ordering and has_more.
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/StartingAfter'
+        - $ref: '#/components/parameters/CreatedGte'
+      responses:
+        '200':
+          description: A paginated list of customers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerList'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /customers/{customer_id}:
+    get:
+      tags: [Customers]
+      operationId: retrieveCustomer
+      summary: Retrieve a customer
+      description: |
+        TEST_CASE: NAMING_02_GOOD_PATH_PARAM
+        Purpose: Tests clear resource id naming and typed path parameters.
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        '200':
+          description: Customer retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+    patch:
+      tags: [Customers]
+      operationId: updateCustomer
+      summary: Update a customer
+      description: |
+        TEST_CASE: UPDATE_01_GOOD_PATCH_PARTIAL
+        Purpose: Tests use of PATCH for partial updates with optional fields.
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerRequest'
+      responses:
+        '200':
+          description: Customer updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /createCustomer:
+    post:
+      tags: [Bad Patterns]
+      operationId: createCustomerActionStyle
+      summary: Create customer action endpoint
+      description: |
+        TEST_CASE: NAMING_03_BAD_VERB_ENDPOINT
+        Purpose: Tests whether action-style endpoint names are penalized.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customerEmail:
+                  type: string
+                customerName:
+                  type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  customerId:
+                    type: integer
+
+  /customer/getById:
+    get:
+      tags: [Bad Patterns]
+      operationId: getCustomerByIdBad
+      summary: Get customer by id
+      description: |
+        TEST_CASE: NAMING_04_BAD_RPC_PATH
+        Purpose: Tests whether RPC-style paths and singular resource names are penalized.
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /payment_intents:
+    post:
+      tags: [Payments]
+      operationId: createPaymentIntent
+      summary: Create a payment intent
+      description: |
+        TEST_CASE: IDEMPOTENCY_01_GOOD_MUTATING_PAYMENT
+        Purpose: Tests whether mutating payment operations are expected to support idempotency.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentIntentRequest'
+      responses:
+        '201':
+          description: Payment intent created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentIntent'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /chargeCard:
+    post:
+      tags: [Bad Patterns]
+      operationId: chargeCardBad
+      summary: Charge a card
+      description: |
+        TEST_CASE: IDEMPOTENCY_02_BAD_PAYMENT_NO_IDEMPOTENCY
+        Purpose: Tests whether a payment-creating operation without idempotency is flagged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cardNumber, amount]
+              properties:
+                cardNumber:
+                  type: string
+                  description: Raw card number intentionally modeled poorly.
+                amount:
+                  type: number
+      responses:
+        '200':
+          description: Payment result
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /refunds:
+    post:
+      tags: [Refunds]
+      operationId: createRefund
+      summary: Create a refund
+      description: |
+        TEST_CASE: MONEY_01_GOOD_MINOR_UNITS
+        Purpose: Tests money fields in integer minor units with explicit currency.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRefundRequest'
+      responses:
+        '201':
+          description: Refund created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Refund'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /refundPaymentNow:
+    post:
+      tags: [Bad Patterns]
+      operationId: refundPaymentNowBad
+      summary: Refund payment now
+      description: |
+        TEST_CASE: MONEY_02_BAD_FLOAT_AMOUNT
+        Purpose: Tests whether decimal float money amounts and unclear currency are flagged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payment:
+                  type: string
+                refundAmount:
+                  type: number
+                  format: float
+                  example: 10.99
+      responses:
+        '200':
+          description: OK
+
+  /orders:
+    get:
+      tags: [Orders]
+      operationId: listOrders
+      summary: List orders
+      description: |
+        TEST_CASE: FILTERING_01_GOOD_FILTER_SORT
+        Purpose: Tests explicit filtering, sorting, and pagination parameters.
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/StartingAfter'
+        - name: status
+          in: query
+          description: Filter by order status.
+          schema:
+            type: string
+            enum: [open, paid, fulfilled, canceled]
+        - name: sort
+          in: query
+          description: Sort order. Prefix with '-' for descending order.
+          schema:
+            type: string
+            enum: [created, -created, total_amount, -total_amount]
+      responses:
+        '200':
+          description: A paginated list of orders
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderList'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /orders/listAll:
+    get:
+      tags: [Bad Patterns]
+      operationId: listAllOrdersBad
+      summary: List all orders
+      description: |
+        TEST_CASE: PAGINATION_02_BAD_UNBOUNDED_LIST
+        Purpose: Tests whether unbounded collection responses are flagged.
+      responses:
+        '200':
+          description: All orders without pagination
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+
+  /orders/{order_id}/cancel:
+    post:
+      tags: [Orders]
+      operationId: cancelOrder
+      summary: Cancel an order
+      description: |
+        TEST_CASE: ACTION_01_GOOD_SUBRESOURCE_ACTION
+        Purpose: Tests acceptable action endpoint for state transition where DELETE would be ambiguous.
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 500
+      responses:
+        '200':
+          description: Order canceled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /deleteOrder:
+    post:
+      tags: [Bad Patterns]
+      operationId: deleteOrderBad
+      summary: Delete order
+      description: |
+        TEST_CASE: DELETE_01_BAD_POST_DELETE
+        Purpose: Tests whether POST-based delete operations are flagged.
+      parameters:
+        - name: orderId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+
+  /reports/balance:
+    get:
+      tags: [Reports]
+      operationId: retrieveBalanceReport
+      summary: Retrieve a balance report
+      description: |
+        TEST_CASE: RESPONSE_01_GOOD_TYPED_RESPONSE
+        Purpose: Tests clear response schema, timestamps, money object, and examples.
+      parameters:
+        - name: as_of
+          in: query
+          description: ISO 8601 timestamp for the balance snapshot.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Balance report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceReport'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /reports/getBalance:
+    get:
+      tags: [Bad Patterns]
+      operationId: getBalanceBad
+      summary: Get balance
+      description: |
+        TEST_CASE: RESPONSE_02_BAD_UNTYPED_RESPONSE
+        Purpose: Tests whether free-form objects are penalized.
+      responses:
+        '200':
+          description: Balance
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /webhook_endpoints:
+    post:
+      tags: [Webhooks]
+      operationId: createWebhookEndpoint
+      summary: Create a webhook endpoint
+      description: |
+        TEST_CASE: WEBHOOK_01_GOOD_ENDPOINT_REGISTRATION
+        Purpose: Tests typed webhook registration and event type enum.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookEndpointRequest'
+      responses:
+        '201':
+          description: Webhook endpoint created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookEndpoint'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /webhooks/acme:
+    post:
+      tags: [Webhooks]
+      operationId: receiveWebhookExample
+      summary: Example webhook payload
+      description: |
+        TEST_CASE: WEBHOOK_02_GOOD_TYPED_EVENT
+        Purpose: Tests event envelope with id, type, created, and data.object.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Event'
+      responses:
+        '200':
+          description: Acknowledge webhook
+
+  /callback:
+    post:
+      tags: [Bad Patterns]
+      operationId: callbackBad
+      summary: Callback
+      description: |
+        TEST_CASE: WEBHOOK_03_BAD_UNTYPED_CALLBACK
+        Purpose: Tests untyped callback payload with no event id, event type, or signature guidance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: OK
+
+  /v1/createNewPayment2:
+    post:
+      tags: [Bad Patterns]
+      operationId: createNewPayment2Bad
+      summary: Create new payment 2
+      description: |
+        TEST_CASE: VERSIONING_01_BAD_VERSION_IN_PATH_AND_NUMBERED_ACTION
+        Purpose: Tests whether numbered endpoints and path version duplication are flagged.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: OK
+
+  /payment_methods:
+    post:
+      tags: [Payments]
+      operationId: createPaymentMethod
+      summary: Create a payment method
+      description: |
+        TEST_CASE: SECURITY_01_GOOD_TOKENIZED_PAYMENT_METHOD
+        Purpose: Tests tokenized card input instead of raw sensitive payment data.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentMethodRequest'
+      responses:
+        '201':
+          description: Payment method created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentMethod'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /cards/save:
+    post:
+      tags: [Bad Patterns]
+      operationId: saveCardBad
+      summary: Save card
+      description: |
+        TEST_CASE: SECURITY_02_BAD_RAW_CARD_STORAGE
+        Purpose: Tests raw PAN/CVV modeling and unclear PCI boundaries.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [number, cvv, expiry]
+              properties:
+                number:
+                  type: string
+                cvv:
+                  type: string
+                expiry:
+                  type: string
+      responses:
+        '200':
+          description: OK
+
+  /subscriptions:
+    post:
+      tags: [Orders]
+      operationId: createSubscription
+      summary: Create a subscription
+      description: |
+        TEST_CASE: ENUM_01_GOOD_ENUM_AND_LIFECYCLE
+        Purpose: Tests explicit enum values and lifecycle states.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubscriptionRequest'
+      responses:
+        '201':
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /makeSubscription:
+    post:
+      tags: [Bad Patterns]
+      operationId: makeSubscriptionBad
+      summary: Make subscription
+      description: |
+        TEST_CASE: ENUM_02_BAD_BOOLEAN_STATE_EXPLOSION
+        Purpose: Tests confusing booleans instead of lifecycle enum.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                isActive:
+                  type: boolean
+                isPaused:
+                  type: boolean
+                isCanceled:
+                  type: boolean
+                isTrial:
+                  type: boolean
+      responses:
+        '200':
+          description: OK
+
+  /files:
+    post:
+      tags: [Reports]
+      operationId: uploadFile
+      summary: Upload a file
+      description: |
+        TEST_CASE: UPLOAD_01_GOOD_MULTIPART_LIMITS
+        Purpose: Tests documented content type and file size limits.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [purpose, file]
+              properties:
+                purpose:
+                  type: string
+                  enum: [dispute_evidence, identity_document]
+                file:
+                  type: string
+                  format: binary
+                  description: Maximum size is 10 MB.
+      responses:
+        '201':
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileObject'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /upload:
+    post:
+      tags: [Bad Patterns]
+      operationId: uploadBad
+      summary: Upload
+      description: |
+        TEST_CASE: UPLOAD_02_BAD_UNCLEAR_UPLOAD
+        Purpose: Tests unclear upload shape, no media type, no size limit, no purpose.
+      requestBody:
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: OK
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+      description: Use a secret API key in the Authorization header.
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Unique key used to safely retry mutating requests without creating duplicate objects.
+      schema:
+        type: string
+        maxLength: 255
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of objects to return. Default is 10. Maximum is 100.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+    StartingAfter:
+      name: starting_after
+      in: query
+      required: false
+      description: Cursor for pagination. Use the id of the last object from the previous page.
+      schema:
+        type: string
+    CreatedGte:
+      name: created[gte]
+      in: query
+      required: false
+      description: Return objects created at or after this Unix timestamp.
+      schema:
+        type: integer
+        format: int64
+    CustomerId:
+      name: customer_id
+      in: path
+      required: true
+      description: Unique identifier for the customer.
+      schema:
+        type: string
+        pattern: '^cus_[a-zA-Z0-9]+$'
+        example: cus_123
+    OrderId:
+      name: order_id
+      in: path
+      required: true
+      description: Unique identifier for the order.
+      schema:
+        type: string
+        pattern: '^ord_[a-zA-Z0-9]+$'
+        example: ord_123
+  responses:
+    ErrorResponse:
+      description: Error response
+      headers:
+        Request-Id:
+          description: Unique request id for support and debugging.
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            invalidRequest:
+              value:
+                error:
+                  type: invalid_request_error
+                  code: missing_required_parameter
+                  message: Missing required parameter: email.
+                  param: email
+                  request_id: req_123
+  schemas:
+    CreateCustomerRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Customer email address.
+        name:
+          type: string
+          maxLength: 200
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+    UpdateCustomerRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+          maxLength: 200
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+    Customer:
+      type: object
+      required: [id, object, email, created, metadata]
+      properties:
+        id:
+          type: string
+          example: cus_123
+        object:
+          type: string
+          const: customer
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+          nullable: true
+        created:
+          type: integer
+          format: int64
+          description: Unix timestamp when the object was created.
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+    CustomerList:
+      allOf:
+        - $ref: '#/components/schemas/ListEnvelope'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Customer'
+    CreatePaymentIntentRequest:
+      type: object
+      required: [amount, currency, customer_id]
+      properties:
+        amount:
+          type: integer
+          description: Amount in the smallest currency unit.
+          minimum: 1
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          example: usd
+        customer_id:
+          type: string
+          example: cus_123
+        payment_method_id:
+          type: string
+          example: pm_123
+        capture_method:
+          type: string
+          enum: [automatic, manual]
+          default: automatic
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+    PaymentIntent:
+      type: object
+      required: [id, object, amount, currency, status, created]
+      properties:
+        id:
+          type: string
+          example: pi_123
+        object:
+          type: string
+          const: payment_intent
+        amount:
+          type: integer
+        currency:
+          type: string
+          example: usd
+        status:
+          type: string
+          enum: [requires_payment_method, requires_confirmation, processing, succeeded, canceled]
+        created:
+          type: integer
+          format: int64
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+    CreateRefundRequest:
+      type: object
+      required: [payment_intent_id, amount, currency]
+      properties:
+        payment_intent_id:
+          type: string
+          example: pi_123
+        amount:
+          type: integer
+          description: Refund amount in the smallest currency unit.
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          example: usd
+        reason:
+          type: string
+          enum: [duplicate, fraudulent, requested_by_customer]
+    Refund:
+      type: object
+      required: [id, object, amount, currency, status, created]
+      properties:
+        id:
+          type: string
+          example: re_123
+        object:
+          type: string
+          const: refund
+        amount:
+          type: integer
+        currency:
+          type: string
+        status:
+          type: string
+          enum: [pending, succeeded, failed, canceled]
+        created:
+          type: integer
+          format: int64
+    Order:
+      type: object
+      required: [id, object, status, total_amount, currency, created]
+      properties:
+        id:
+          type: string
+          example: ord_123
+        object:
+          type: string
+          const: order
+        status:
+          type: string
+          enum: [open, paid, fulfilled, canceled]
+        total_amount:
+          type: integer
+        currency:
+          type: string
+          example: usd
+        customer_id:
+          type: string
+        created:
+          type: integer
+          format: int64
+    OrderList:
+      allOf:
+        - $ref: '#/components/schemas/ListEnvelope'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Order'
+    BalanceReport:
+      type: object
+      required: [object, available, pending, as_of]
+      properties:
+        object:
+          type: string
+          const: balance_report
+        available:
+          $ref: '#/components/schemas/Money'
+        pending:
+          $ref: '#/components/schemas/Money'
+        as_of:
+          type: string
+          format: date-time
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: integer
+          description: Amount in the smallest currency unit.
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          example: usd
+    CreateWebhookEndpointRequest:
+      type: object
+      required: [url, enabled_events]
+      properties:
+        url:
+          type: string
+          format: uri
+        enabled_events:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/EventType'
+        description:
+          type: string
+    WebhookEndpoint:
+      type: object
+      required: [id, object, url, enabled_events, status]
+      properties:
+        id:
+          type: string
+          example: wh_123
+        object:
+          type: string
+          const: webhook_endpoint
+        url:
+          type: string
+          format: uri
+        enabled_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventType'
+        status:
+          type: string
+          enum: [enabled, disabled]
+    Event:
+      type: object
+      required: [id, object, type, created, data]
+      properties:
+        id:
+          type: string
+          example: evt_123
+        object:
+          type: string
+          const: event
+        type:
+          $ref: '#/components/schemas/EventType'
+        created:
+          type: integer
+          format: int64
+        data:
+          type: object
+          required: [object]
+          properties:
+            object:
+              oneOf:
+                - $ref: '#/components/schemas/PaymentIntent'
+                - $ref: '#/components/schemas/Refund'
+                - $ref: '#/components/schemas/Customer'
+    EventType:
+      type: string
+      enum:
+        - payment_intent.succeeded
+        - payment_intent.canceled
+        - refund.succeeded
+        - customer.created
+        - customer.updated
+    CreatePaymentMethodRequest:
+      type: object
+      required: [type, token]
+      properties:
+        type:
+          type: string
+          enum: [card]
+        token:
+          type: string
+          description: Token returned by a secure client-side collection flow.
+          example: tok_123
+        billing_details:
+          type: object
+          properties:
+            name:
+              type: string
+            email:
+              type: string
+              format: email
+    PaymentMethod:
+      type: object
+      required: [id, object, type, created]
+      properties:
+        id:
+          type: string
+          example: pm_123
+        object:
+          type: string
+          const: payment_method
+        type:
+          type: string
+          enum: [card]
+        card:
+          type: object
+          properties:
+            brand:
+              type: string
+              enum: [visa, mastercard, amex, discover, unknown]
+            last4:
+              type: string
+              minLength: 4
+              maxLength: 4
+            exp_month:
+              type: integer
+              minimum: 1
+              maximum: 12
+            exp_year:
+              type: integer
+        created:
+          type: integer
+          format: int64
+    CreateSubscriptionRequest:
+      type: object
+      required: [customer_id, price_id]
+      properties:
+        customer_id:
+          type: string
+        price_id:
+          type: string
+        trial_period_days:
+          type: integer
+          minimum: 0
+          maximum: 365
+    Subscription:
+      type: object
+      required: [id, object, status, customer_id, created]
+      properties:
+        id:
+          type: string
+          example: sub_123
+        object:
+          type: string
+          const: subscription
+        customer_id:
+          type: string
+        status:
+          type: string
+          enum: [incomplete, trialing, active, past_due, paused, canceled]
+        created:
+          type: integer
+          format: int64
+    FileObject:
+      type: object
+      required: [id, object, purpose, filename, size]
+      properties:
+        id:
+          type: string
+          example: file_123
+        object:
+          type: string
+          const: file
+        purpose:
+          type: string
+          enum: [dispute_evidence, identity_document]
+        filename:
+          type: string
+        size:
+          type: integer
+          description: Size in bytes.
+    ListEnvelope:
+      type: object
+      required: [object, data, has_more]
+      properties:
+        object:
+          type: string
+          const: list
+        data:
+          type: array
+          items: {}
+        has_more:
+          type: boolean
+        url:
+          type: string
+    Metadata:
+      type: object
+      description: Key-value pairs for attaching non-sensitive custom information to an object.
+      additionalProperties:
+        type: string
+      maxProperties: 50
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [type, code, message, request_id]
+          properties:
+            type:
+              type: string
+              enum: [api_error, authentication_error, invalid_request_error, rate_limit_error]
+            code:
+              type: string
+              example: missing_required_parameter
+            message:
+              type: string
+            param:
+              type: string
+              nullable: true
+            request_id:
+              type: string
+            retry_after:
+              type: integer
+              description: Seconds to wait before retrying when rate limited.
